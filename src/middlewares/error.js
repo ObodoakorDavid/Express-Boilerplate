@@ -38,11 +38,11 @@ export const errorMiddleware = (err, req, res, next) => {
   }
 
   if (err.name === "ValidationError") {
-    status_code = 422; 
+    status_code = 422;
     message = "Validation Error";
     const validationErrors = Object.keys(err.errors).map((field) => {
       return {
-        field, 
+        field,
         message: err.errors[field].message,
       };
     });

@@ -13,6 +13,10 @@ const UserProfileSchema = new Schema(
       type: String,
       required: [true, "Please provide a firstName"],
     },
+    lastName: {
+      type: String,
+      required: [true, "Please provide a firstName"],
+    },
     email: {
       type: String,
       required: [true, "Please provide an email"],
@@ -31,11 +35,6 @@ const UserProfileSchema = new Schema(
         /^(0)(7|8|9){1}(0|1){1}[0-9]{8}$/,
         "Please enter a valid Nigerian phone number",
       ],
-    },
-    roles: {
-      type: [String],
-      enum: ["user", "vendor", "admin"],
-      default: ["user"],
     },
     isVerified: {
       type: Boolean,

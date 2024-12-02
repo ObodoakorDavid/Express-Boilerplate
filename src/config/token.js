@@ -21,6 +21,6 @@ export const verifyToken = (token) => {
       throw ApiError.unauthorized("Invalid Token");
     }
 
-    throw ApiError.internalServerError("Internal Server Error");
+    throw error;
   }
 };

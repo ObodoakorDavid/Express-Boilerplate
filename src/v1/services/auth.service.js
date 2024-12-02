@@ -6,16 +6,18 @@ import OTP from "../models/otp.model.js";
 import ApiError from "../../utils/apiError.js";
 import { hashPassword, validatePassword } from "../../utils/validationUtils.js";
 import emailUtils from "../../utils/emailUtils.js";
+import ApiSuccess from "../../utils/apiSuccess.js"; // Import ApiSuccess
 
-export default {
-  findUserByEmail: async function (email) {
+class UserService {
+  async findUserByEmail(email) {
     const user = await User.findOne({ email });
     if (!user) {
       throw ApiError.notFound("No user with this email");
     }
     return user;
-  },
-  findUserProfileByIdOrEmail: async function (identifier) {
+  }
+
+  async findUserProfileByIdOrEmail(identifier) {
     const isObjectId = mongoose.Types.ObjectId.isValid(identifier);
     const userProfile = await UserProfile.findOne(
       isObjectId ? { userId: identifier } : { email: identifier }
@@ -26,8 +28,9 @@ export default {
     }
 
     return userProfile;
-  },
-  register: async function (userData = {}) {
+  }
+
+  async register(userData = {}) {
     const { password } = userData;
     const hashedPassword = await hashPassword(password);
 
@@ -49,123 +52,102 @@ export default {
         { session }
       );
 
-      const emailInfo = await emailUtils.sendOTPViaEmail(
+      const emailInfo = await emailUtils.sendOTP(
         user[0].email,
         userProfile[0].firstName
       );
 
       await session.commitTransaction();
-      session.endSession();
-      return {
-        success: true,
-        status_code: 201,
-        message: `Registeration Successful, OTP has been sent to ${emailInfo.envelope.to}`,
-        data: { email: user[0].email, id: user[0]._id },
-      };
+      return ApiSuccess.created(
+        `Registration Successful, OTP has been sent to ${emailInfo.envelope.to}`,
+        { email: user[0].email, id: user[0]._id }
+      );
     } catch (error) {
       await session.abortTransaction();
-      session.endSession();
       throw error;
+    } finally {
+      session.endSession();
     }
-  },
-  login: async function (userData = {}) {
+  }
+
+  async login(userData = {}) {
     const { email, password } = userData;
     const user = await this.findUserByEmail(email);
     await validatePassword(password, user.password);
-    const userProfile = await this.findUserProfileByIdOrEmail(user._id);
 
+    const userProfile = await this.findUserProfileByIdOrEmail(user._id);
     if (!userProfile.isVerified) {
       throw ApiError.forbidden("Email Not Verified");
     }
+
     const token = generateToken(user._id);
-    return {
-      success: true,
-      status_code: 200,
-      message: "Login Successful",
-      data: { user: { email: user.email, id: user._id }, token },
-    };
-  },
-  getUser: async function (userId) {
+    return ApiSuccess.ok("Login Successful", {
+      user: { email: user.email, id: user._id },
+      token,
+    });
+  }
+
+  async getUser(userId) {
     const userProfile = await this.findUserProfileByIdOrEmail(userId);
-    return {
-      success: true,
-      status_code: 200,
-      message: "User Retrieved Successfully",
-      data: {
-        user: {
-          id: userProfile.userId,
-          email: userProfile.email,
-          firstName: userProfile.firstName,
-        },
+    return ApiSuccess.ok("User Retrieved Successfully", {
+      user: {
+        id: userProfile.userId,
+        email: userProfile.email,
+        firstName: userProfile.firstName,
       },
-    };
-  },
-  sendOTP: async function ({ email }) {
+    });
+  }
+
+  async sendOTP({ email }) {
     const userProfile = await this.findUserProfileByIdOrEmail(email);
     if (userProfile.isVerified) {
-      return {
-        success: true,
-        status_code: 200,
-        message: "User Already Verified",
-      };
+      return ApiSuccess.ok("User Already Verified");
     }
 
-    const emailInfo = await emailUtils.sendOTPViaEmail(
+    const emailInfo = await emailUtils.sendOTP(
       userProfile.email,
       userProfile.firstName
     );
 
-    return {
-      success: true,
-      status_code: 200,
-      message: `OTP has been sent to ${emailInfo.envelope.to}`,
-    };
-  },
-  verifyOTP: async function ({ email, otp }) {
+    return ApiSuccess.ok(`OTP has been sent to ${emailInfo.envelope.to}`);
+  }
+
+  async verifyOTP({ email, otp }) {
     const userProfile = await this.findUserProfileByIdOrEmail(email);
     if (userProfile.isVerified) {
-      return {
-        success: true,
-        status_code: 200,
-        message: "User Already Verified",
-      };
+      return ApiSuccess.ok("User Already Verified");
     }
+
     const otpExists = await OTP.findOne({ email, otp });
-    if (!otpExists) {
+    if (!otpExists || otpExists.expiresAt < Date.now()) {
       throw ApiError.badRequest("Invalid or Expired OTP");
     }
+
     userProfile.isVerified = true;
     await userProfile.save();
-    return {
-      success: true,
-      status_code: 200,
-      message: "Email Verified",
-    };
-  },
-  forgotPassword: async function ({ email }) {
+    return ApiSuccess.ok("Email Verified");
+  }
+
+  async forgotPassword({ email }) {
     const userProfile = await this.findUserProfileByIdOrEmail(email);
-    const emailInfo = await emailUtils.sendOTPViaEmail(
+    const emailInfo = await emailUtils.sendOTP(
       userProfile.email,
       userProfile.firstName
     );
-    return {
-      success: true,
-      status_code: 200,
-      message: `OTP has been sent to ${emailInfo.envelope.to}`,
-    };
-  },
-  resetPassword: async function ({ email, otp, password }) {
+    return ApiSuccess.ok(`OTP has been sent to ${emailInfo.envelope.to}`);
+  }
+
+  async resetPassword({ email, otp, password }) {
     const user = await this.findUserByEmail(email);
     const otpExists = await OTP.findOne({ email, otp });
     if (!otpExists) {
       throw ApiError.badRequest("Invalid or Expired OTP");
     }
-    user.password = password;
+
+    user.password = await hashPassword(password);
     await user.save();
-    return {
-      success: true,
-      status_code: 200,
-      message: "Password Updated",
-    };
-  },
-};
+    return ApiSuccess.ok("Password Updated");
+  }
+}
+
+export default new UserService();

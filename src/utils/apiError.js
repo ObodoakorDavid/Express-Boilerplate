@@ -23,7 +23,7 @@ class ApiError extends Error {
     return new ApiError(404, message);
   }
 
-  static internalServerError(message) {
+  static methodNotAllowed(message) {
     return new ApiError(405, message);
   }
 
@@ -35,6 +35,10 @@ class ApiError extends Error {
     return new ApiError(500, message);
   }
 
+  static serviceUnavailable(message) {
+    return new ApiError(503, message);
+  }
+
   getStatusMessage(statusCode) {
     const statuses = {
       400: "Bad Request",
@@ -44,6 +48,7 @@ class ApiError extends Error {
       405: "Method Not Allowed",
       422: "Unprocessable Entity",
       500: "Internal Server Error",
+      503: "Service Unavailable",
     };
     return statuses[statusCode] || "Error";
   }

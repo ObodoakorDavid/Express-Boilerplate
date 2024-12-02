@@ -1,70 +1,74 @@
-import nodemailer from "nodemailer";
-import handlebars from "handlebars";
 import fs from "fs";
-import { dirname, join } from "path";
-import { fileURLToPath } from "url";
+import path from "path";
+import handlebars from "handlebars";
 import OTP from "../v1/models/otp.model.js";
 import generateOTP from "../utils/generateOTP.js";
-// import { formatDate } from "./dateUtils.js";
+import createTransporter from "../lib/emailTransporter.js";
+import { fileURLToPath } from "url";
+import { dirname } from "path";
 
-import env from "dotenv";
-env.config();
-
+// Get the directory name from import.meta.url
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const templatePath = join(__dirname, "..", "templates", "OTPTemplate.html");
-const emailTemplateSource = fs.readFileSync(templatePath, "utf8");
 
-const sendEmail = async ({ to, subject, text, html, from }) => {
-  try {
-    const transporter = nodemailer.createTransport({
-      host: "smtp-relay.brevo.com",
-      port: 587,
-      auth: {
-        user: process.env.BREVO_EMAIL,
-        pass: process.env.BREVO_PASSWORD,
-      },
-      tls: {
-        rejectUnauthorized: false,
-      },
-    });
-
-    const mailOptions = {
-      from: from || "Admin@BCT.com",
-      to,
-      subject,
-      text,
-      html,
-    };
-
-    const info = await transporter.sendMail(mailOptions);
-    console.log("Email sent:", info.response);
-    return info;
-  } catch (error) {
-    console.error("Error sending email:", error);
-    throw error;
+class EmailUtils {
+  constructor({
+    emailTemplatePath = path.join(
+      __dirname,
+      "..",
+      "templates",
+      "OTPTemplate.html"
+    ),
+    defaultSender = "Admin@BCT.com",
+  } = {}) {
+    this.emailTemplatePath = emailTemplatePath;
+    this.transporter = createTransporter();
+    this.defaultSender = defaultSender;
+    this.emailTemplateSource = fs.readFileSync(this.emailTemplatePath, "utf8");
+    this.template = handlebars.compile(this.emailTemplateSource);
   }
-};
 
-const sendOTPViaEmail = async (email, userName) => {
-  await OTP.findOneAndDelete({ email });
-  const otp = generateOTP();
-  await OTP.create({ email, otp });
-  const subject = "OTP Request";
-  //   const date = formatDate(Date.now());
-  const date = Date.now();
-  const emailText = `Hello ${userName},\n\nYour OTP is: ${otp}`;
-  const template = handlebars.compile(emailTemplateSource);
-  const html = template({ userName, otp, date });
+  async sendEmail({ to, subject, text, html, from }) {
+    try {
+      const mailOptions = {
+        from: from || this.defaultSender,
+        to,
+        subject,
+        text,
+        html,
+      };
 
-  return sendEmail({
-    to: email,
-    subject,
-    text: emailText,
-    html,
-  });
-};
-export default {
-  sendEmail,
-  sendOTPViaEmail,
-};
+      const info = await this.transporter.sendMail(mailOptions);
+      console.log("Email sent:", info.response);
+      return info;
+    } catch (error) {
+      console.error("Error sending email:", error);
+      throw error;
+    }
+  }
+
+  async sendOTP(email, userName) {
+    try {
+      await OTP.findOneAndDelete({ email });
+      const otp = generateOTP();
+      await OTP.create({ email, otp });
+
+      const subject = "OTP Request";
+      const date = new Date().toLocaleString();
+      const emailText = `Hello ${userName},\n\nYour OTP is: ${otp}`;
+      const html = this.template({ userName, otp, date });
+
+      return this.sendEmail({
+        to: email,
+        subject,
+        text: emailText,
+        html,
+      });
+    } catch (error) {
+      console.error("Error sending OTP:", error);
+      throw error;
+    }
+  }
+}
+
+export default new EmailUtils();
